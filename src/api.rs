@@ -1,20 +1,22 @@
-
-use std::io::{BufRead, Cursor};
-use reqwest;
-use reqwest::{Response, StatusCode};
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
-use sha1::{Sha1};
-use serde_json::{from_str};
 use derive_builder::Builder;
+use reqwest;
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+use reqwest::{Response, StatusCode};
+use serde_json::from_str;
+use sha1::Sha1;
+use std::io::{BufRead, Cursor};
 
-use crate::{errors::Result, model::{Breach, Password}};
+use crate::{
+    errors::Result,
+    model::{Breach, Password},
+};
 
-static MAIN_API_URL : &'static str = "https://haveibeenpwned.com/api/v3/";
-static RANGE_API_URL : &'static str = "https://api.pwnedpasswords.com/range/";
-static DEFAULT_USER_AGENT : &'static str = "wisespace-io";
+static MAIN_API_URL: &'static str = "https://haveibeenpwned.com/api/v3/";
+static RANGE_API_URL: &'static str = "https://api.pwnedpasswords.com/range/";
+static DEFAULT_USER_AGENT: &'static str = "wisespace-io";
 static API_KEY: &'static str = "hibp-api-key";
 
-#[derive(Builder, Debug, PartialEq)]
+#[derive(Builder, Debug)]
 pub struct Pwned {
     #[builder(setter(into), default = "self.default_user_agent()")]
     pub user_agent: String,
@@ -28,7 +30,10 @@ pub struct Pwned {
     pub pad_password_responses: bool,
 
     #[builder(setter(into), default = "None")]
-    pub api_key: Option<String>
+    pub api_key: Option<String>,
+
+    #[builder(default = "self.default_http_client()")]
+    pub http_client: reqwest::Client,
 }
 
 impl PwnedBuilder {
@@ -39,11 +44,16 @@ impl PwnedBuilder {
             DEFAULT_USER_AGENT.to_string()
         }
     }
+
+    fn default_http_client(&self) -> reqwest::Client {
+        reqwest::Client::new()
+    }
 }
 
 impl Pwned {
     pub async fn check_password<P>(&self, password: P) -> Result<Password>
-        where P: Into<String>
+    where
+        P: Into<String>,
     {
         let mut sha1 = Sha1::new();
 
@@ -62,24 +72,32 @@ impl Pwned {
                         let v: Vec<&str> = value.split(":").collect();
                         let count = v[1].parse::<u64>().unwrap();
                         let found = count > 0;
-                        return Ok(Password {found, count});
+                        return Ok(Password { found, count });
                     }
                 }
-                Ok(Password {found: false, count: 0})
-            },
+                Ok(Password {
+                    found: false,
+                    count: 0,
+                })
+            }
             Err(e) => Err(e),
         }
     }
 
     pub async fn check_email<E>(&self, email: E) -> Result<Vec<Breach>>
-        where E: Into<String>
+    where
+        E: Into<String>,
     {
-        let url = format!("{}breachedaccount/{}?truncateResponse=false", MAIN_API_URL, email.into());
+        let url = format!(
+            "{}breachedaccount/{}?truncateResponse=false",
+            MAIN_API_URL,
+            email.into()
+        );
         match self.get(url).await {
             Ok(answer) => {
                 let breach: Vec<Breach> = from_str(answer.as_str()).unwrap();
                 Ok(breach)
-            },
+            }
             Err(e) => Err(e),
         }
     }
@@ -95,29 +113,26 @@ impl Pwned {
             custom_headers.insert("Add-Padding", HeaderValue::from_str("true")?);
         }
 
-        let client = reqwest::Client::new();
-        let response = client
+        let response = self
+            .http_client
             .get(url.as_str())
             .headers(custom_headers)
-            .send().await?;
+            .send()
+            .await?;
 
         self.handler(response).await
     }
 
     async fn handler(&self, response: Response) -> Result<String> {
         match response.status() {
-            StatusCode::OK => {
-                Ok(response.text().await?)
-            },
-            StatusCode::NOT_FOUND => {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "The account could not be found and has therefore not been pwned").into())
-            }
+            StatusCode::OK => Ok(response.text().await?),
+            StatusCode::NOT_FOUND => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "The account could not be found and has therefore not been pwned",
+            )
+            .into()),
             status => {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("{:?}", status)).into())
+                Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", status)).into())
             }
         }
     }
