@@ -25,7 +25,8 @@ serde_derive = "1.0"
 thiserror = "1.0"
 derive_builder = "0.20"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots", "hickory-dns"] }
-sha1 = "0.6"
+sha1 = "0.10"
+base16ct = { version = "0.2", features = ["alloc"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }

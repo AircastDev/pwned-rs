@@ -3,7 +3,7 @@ use reqwest;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::{Response, StatusCode};
 use serde_json::from_str;
-use sha1::Sha1;
+use sha1::{Digest, Sha1};
 use std::io::{BufRead, Cursor};
 
 use crate::{
@@ -59,7 +59,7 @@ impl Pwned {
 
         sha1.update(password.into().as_bytes());
 
-        let hash = sha1.digest().to_string();
+        let hash = base16ct::lower::encode_string(&sha1.finalize());
         let (prefix, suffix) = hash.split_at(5);
         let url = format!("{}{}", RANGE_API_URL, prefix);
 
